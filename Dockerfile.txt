@@ -1,19 +1,20 @@
 # Используем Python 3.11 slim
 FROM python:3.11-slim
 
-# Рабочая директория внутри контейнера
+# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем все файлы проекта в контейнер
+# Копируем файлы проекта
 COPY . /app
 
 # Обновляем pip и устанавливаем зависимости
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Переменные окружения (не секретные)
+# Устанавливаем переменные окружения (не секретные)
 ENV PYTHONUNBUFFERED=1
 
-# Команда для запуска бота
+# Команда по умолчанию (можно заменить на запуск вашего бота)
 CMD ["python", "bot.py"]
+
 
