@@ -4,16 +4,14 @@
 # In[ ]:
 
 
+import os
 import sqlite3
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes,
-    MessageHandler, filters, ConversationHandler
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-# --- Состояния для ConversationHandler ---
+# --- Константы состояний ---
 DATE, NAME, NOTE = range(3)
 
 # --- Подключение к базе данных ---
@@ -30,11 +28,10 @@ CREATE TABLE IF NOT EXISTS birthdays (
 """)
 conn.commit()
 
-# --- Команды бота ---
+# --- Хэндлеры ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я бот-напоминалка о днях рождения.\n"
-        "Введите дату рождения в формате ДД.ММ:"
+        "Привет! Я бот-напоминалка о днях рождения.\nВведите дату рождения в формате ДД.MM:"
     )
     return DATE
 
@@ -46,7 +43,7 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите имя человека:")
         return NAME
     except ValueError:
-        await update.message.reply_text("Неверный формат. Введите дату в формате ДД.ММ:")
+        await update.message.reply_text("Неверный формат. Введите дату в формате ДД.MM:")
         return DATE
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -70,7 +67,7 @@ async def get_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Действие отменено.")
+    await update.message.reply_text("Отмена.")
     return ConversationHandler.END
 
 # --- Функция напоминания ---
@@ -78,14 +75,13 @@ async def send_birthday_reminder(app):
     today = datetime.now().strftime("%d.%m")
     cursor.execute("SELECT user_id, name, note FROM birthdays WHERE date=?", (today,))
     rows = cursor.fetchall()
-    for row in rows:
-        user_id, name, note = row
+    for user_id, name, note in rows:
         message = f"Сегодня день рождения у {name}."
         if note:
             message += f" Примечание: {note}"
         await app.bot.send_message(chat_id=user_id, text=message)
 
-# --- Планировщик для ежедневных уведомлений в 9:00 ---
+# --- Планировщик ---
 def start_scheduler(app):
     scheduler = BackgroundScheduler()
     scheduler.add_job(lambda: send_birthday_reminder(app), 'cron', hour=9, minute=0)
@@ -93,7 +89,11 @@ def start_scheduler(app):
 
 # --- Основной запуск ---
 if __name__ == "__main__":
-    app = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("Не указан BOT_TOKEN в переменных окружения!")
+
+    app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
