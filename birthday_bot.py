@@ -7,7 +7,7 @@
 import os
 import sqlite3
 from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
@@ -83,7 +83,7 @@ async def send_birthday_reminder(app):
 
 # --- Планировщик ---
 def start_scheduler(app):
-    scheduler = BackgroundScheduler()
+    scheduler = AsyncIOScheduler()
     scheduler.add_job(lambda: send_birthday_reminder(app), 'cron', hour=9, minute=0)
     scheduler.start()
 
