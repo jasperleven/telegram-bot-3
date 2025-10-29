@@ -1,1 +1,1 @@
-worker: python birthday_bot.py
+worker: python main.py
