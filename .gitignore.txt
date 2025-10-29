@@ -1,7 +1,0 @@
-__pycache__/
-*.pyc
-birthdays.db
-.env
-
-
-
