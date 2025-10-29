@@ -1,20 +1,25 @@
-# Используем Python 3.11 slim
+# Базовый образ с Python 3.11
 FROM python:3.11-slim
 
-# Устанавливаем рабочую директорию
+# Создаем рабочую директорию
 WORKDIR /app
 
 # Копируем файлы проекта
 COPY . /app
 
-# Обновляем pip и устанавливаем зависимости
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# Устанавливаем зависимости в виртуальной среде
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Устанавливаем переменные окружения (не секретные)
+# Добавляем venv в PATH
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Опция для логирования Python сразу (без буферизации)
 ENV PYTHONUNBUFFERED=1
 
-# Команда по умолчанию (можно заменить на запуск вашего бота)
+# Команда запуска
 CMD ["python", "bot.py"]
+
 
 
