@@ -7,15 +7,14 @@
 import os
 import sqlite3
 from datetime import datetime
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
-from aiogram.utils import executor
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
+from apscheduler.schedulers.background import BackgroundScheduler
+from telegram import Bot
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
 
-# --- Подключение к базе данных ---
+# --- Состояния ---
+DATE, NAME, NOTE = range(3)
+
+# --- База данных ---
 conn = sqlite3.connect("birthdays.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
@@ -29,60 +28,46 @@ CREATE TABLE IF NOT EXISTS birthdays (
 """)
 conn.commit()
 
-# --- FSM состояния ---
-class BirthdayForm(StatesGroup):
-    date = State()
-    name = State()
-    note = State()
-
-# --- Инициализация бота ---
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("Не указан BOT_TOKEN в переменных окружения!")
-
-bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
-
 # --- Хэндлеры ---
-@dp.message_handler(commands="start")
-async def cmd_start(message: types.Message):
-    await message.answer("Привет! Я бот-напоминалка о днях рождения.\nВведите дату рождения в формате ДД.MM:")
-    await BirthdayForm.date.set()
+def start(update, context):
+    update.message.reply_text("Привет! Введите дату рождения (ДД.MM):")
+    return DATE
 
-@dp.message_handler(state=BirthdayForm.date)
-async def process_date(message: types.Message, state: FSMContext):
-    text = message.text
+def get_date(update, context):
     try:
-        datetime.strptime(text, "%d.%m")
-        await state.update_data(date=text)
-        await message.answer("Введите имя человека:")
-        await BirthdayForm.next()
+        datetime.strptime(update.message.text, "%d.%m")
+        context.user_data['date'] = update.message.text
+        update.message.reply_text("Введите имя человека:")
+        return NAME
     except ValueError:
-        await message.answer("Неверный формат. Введите дату в формате ДД.MM:")
+        update.message.reply_text("Неверный формат. Введите ДД.MM:")
+        return DATE
 
-@dp.message_handler(state=BirthdayForm.name)
-async def process_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Введите дополнительную информацию (или 'нет'):")
-    await BirthdayForm.next()
+def get_name(update, context):
+    context.user_data['name'] = update.message.text
+    update.message.reply_text("Введите дополнительную информацию (или 'нет'):")
+    return NOTE
 
-@dp.message_handler(state=BirthdayForm.note)
-async def process_note(message: types.Message, state: FSMContext):
-    note = message.text
+def get_note(update, context):
+    note = update.message.text
     if note.lower() == "нет":
         note = ""
-    data = await state.get_data()
+    context.user_data['note'] = note
+
     cursor.execute(
         "INSERT INTO birthdays (user_id, name, date, note) VALUES (?, ?, ?, ?)",
-        (message.chat.id, data['name'], data['date'], note)
+        (update.message.chat_id, context.user_data['name'], context.user_data['date'], note)
     )
     conn.commit()
-    await message.answer("Записано! Я буду напоминать о дне рождения в 9:00.")
-    await state.finish()
+    update.message.reply_text("Записано! Напоминание будет в 9:00.")
+    return ConversationHandler.END
 
-# --- Функция напоминания ---
-async def send_birthday_reminder():
+def cancel(update, context):
+    update.message.reply_text("Отмена.")
+    return ConversationHandler.END
+
+# --- Напоминания ---
+def send_reminder(bot):
     today = datetime.now().strftime("%d.%m")
     cursor.execute("SELECT user_id, name, note FROM birthdays WHERE date=?", (today,))
     rows = cursor.fetchall()
@@ -90,14 +75,36 @@ async def send_birthday_reminder():
         text = f"Сегодня день рождения у {name}."
         if note:
             text += f" Примечание: {note}"
-        await bot.send_message(chat_id=user_id, text=text)
+        bot.send_message(chat_id=user_id, text=text)
 
-# --- Планировщик ---
-scheduler = AsyncIOScheduler()
-scheduler.add_job(send_birthday_reminder, 'cron', hour=9, minute=0)
-scheduler.start()
+def start_scheduler(updater):
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(lambda: send_reminder(updater.bot), 'cron', hour=9, minute=0)
+    scheduler.start()
 
-# --- Запуск ---
+# --- Основной запуск ---
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("Не указан BOT_TOKEN в переменных окружения!")
+
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            DATE: [MessageHandler(Filters.text & ~Filters.command, get_date)],
+            NAME: [MessageHandler(Filters.text & ~Filters.command, get_name)],
+            NOTE: [MessageHandler(Filters.text & ~Filters.command, get_note)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dp.add_handler(conv_handler)
+
+    start_scheduler(updater)
+
+    updater.start_polling()
+    updater.idle()
 
