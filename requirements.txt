@@ -4,7 +4,7 @@ aiohttp==3.8.5
 pydantic==2.11.9
 typing-extensions==4.12.2
 httpx~=0.25.0
-aiofiles~=23.1.0
+aiofiles~=23.2.1
 certifi>=2023.7.22
 magic-filter~=1.0.12
 attrs>=17.3.0
